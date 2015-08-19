@@ -121,8 +121,8 @@ sub Configure {
             $min_age = $inf->{files}->{$f}->{min_age};
         }
 
-	my $timeout = $inf->{files}->{$f}->{timeout};
-	$timeout = $inf->{timeout} unless defined($timeout);
+        my $timeout = $inf->{files}->{$f}->{timeout};
+        $timeout = $inf->{timeout} unless defined($timeout);
 
         my $success = 0;
         if (@proxyhosts && $inf->{files}->{$f}->{proxy}) {
@@ -144,7 +144,8 @@ sub Configure {
                     capath => $inf->{files}->{$f}->{capath},
                     cert => $inf->{files}->{$f}->{cert},
                     key =>  $inf->{files}->{$f}->{key},
-                    min_age => $min_age);
+                    min_age => $min_age,
+                    retry => $inf->{retry});
                 if ($success) {
                     @proxyhosts = ($proxy, @proxyhosts);
                     last;
@@ -166,7 +167,8 @@ sub Configure {
                     capath => $inf->{files}->{$f}->{capath},
                     cert => $inf->{files}->{$f}->{cert},
                     key =>  $inf->{files}->{$f}->{key},
-                    min_age => $min_age)) {
+                    min_age => $min_age,
+                    retry => $inf->{retry})) {
                 $self->error("failed to retrieve $source, skipping");
                 next;
             }
@@ -222,13 +224,23 @@ sub get_head
 
     my $lwp = LWP::UserAgent->new;
     $lwp->timeout($opts{head_timeout}) if (defined($opts{head_timeout}));
-    return $lwp->head($source);
+
+    my $retry = $opts{retry} || 0;
+
+    while(1) {
+         my $ts = $lwp->head($source);
+         if ($ts->is_success || $retry-- <= 0) {
+             return $ts;
+         } else {
+             $self->info("retrying HEAD request to $source");
+         }
+    }
 }
 
 sub download {
     my ($self, %opts) = @_;
     my ($file, $source, $timeout, $proxy, $gssneg, $min_age,
-    $cacert, $capath, $cert, $key);
+    $cacert, $capath, $cert, $key, $retry);
     $source  = $opts{href};
     $timeout = $opts{timeout};
     $proxy   = $opts{proxy} || "";
@@ -238,6 +250,7 @@ sub download {
     $capath  = $opts{capath};
     $key     = $opts{key};
     $cert    = $opts{cert};
+    $retry   = $opts{retry} || 0;
 
     $self->debug(1, "Processing file $opts{file} from $source");
 
@@ -271,6 +284,10 @@ sub download {
 
     if ($cert) {
         push @cmd, ("--cert", $cert);
+    }
+
+    if ($retry) {
+        push @cmd, ("--retry", $retry);
     }
 
     push @cmd, $source;

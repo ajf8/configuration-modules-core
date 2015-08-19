@@ -51,6 +51,7 @@ type component_download_type = extensible {
     "proxyhosts" ? string[]
     "head_timeout" ? long # seconds, timeout for HEAD requests which checks for changes
     "timeout" ? long # seconds, total timeout for fetch of file, can be overridden per file
+    "retry" ? long = 0 # retries per server for both HEAD and GET requests
 };
 
 bind "/software/components/download" = component_download_type;
