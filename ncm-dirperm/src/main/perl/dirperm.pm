@@ -21,6 +21,10 @@ use Fcntl ':mode';
 
 local(*DTA);
 
+use constant MTAB_PATH => "/etc/mtab";
+
+my @configured_mounts;
+my %available_mounts;
 
 ##########################################################################
 sub Configure($$@) {
@@ -30,6 +34,24 @@ sub Configure($$@) {
 
     # Define paths for convenience.
     my $base = "/software/components/dirperm";
+
+    my $filesystems = "/system/filesystems";
+    if ($config->elementExists($filesystems)) {
+        foreach (sort { $a->{mountpoint} cmp $b->{mountpoint} } @{$config->getElement($filesystems)->getTree()}) {
+            push @configured_mounts, $_->{mountpoint};
+        }
+    }
+
+    # Get actual mountpoints available on the server into a hash.
+    if (open(my $mtab, "<", MTAB_PATH)) {
+        for my $line (<$mtab>) {
+            my ($device, $mnt_point, $fstype, $options) = split /\s+/, $line;
+            $available_mounts{$mnt_point}++;
+        }
+        close($mtab);
+    } else {
+        $self->warn("unable to open mtab: $!");
+    }
 
     # Get ncm-dirperm config into a hash
     my $dirperm_config = $config->getElement($base)->getTree();
@@ -189,6 +211,40 @@ sub process_path {
 				return 0;
 			}
 		} elsif ($type eq "d") {
+            # Should we check if the needed mount is actually mounted?
+            # (i.e. don't build path on / (root) if the mount point is not available)
+            if ($pathentry->{checkmount}) {
+                # Which mountpoint is path built on?
+                my $path_mountpoint = undef;
+
+                foreach my $mntpt (@configured_mounts) {
+                    if ($path =~ /^$mntpt\//) {
+                        $path_mountpoint = $mntpt;
+                        last;
+                    }
+                }
+
+                if (!defined($path_mountpoint)) {
+                    $self->error("couldn't find matching mount in profile for $path. skipping.");
+                    return 0
+                } elsif (not exists($available_mounts{$path_mountpoint})) {
+                    $self->error("filesytem mount $path_mountpoint not available for $path. skipping.");
+                    return 0;
+                }
+            }
+            if ($pathentry->{notroot}) {
+                my $path_mountpoint = undef;
+                foreach my $mntpt (keys %available_mounts) {
+                    if ($path =~ /^$mntpt\//) {
+                        $path_mountpoint = $mntpt;
+                        last;
+                    }
+                }
+                if (!defined($path_mountpoint)) {
+                    $self->error("$path would be created on the root filesystem (notroot enabled).");
+                    return 0;
+                }
+            }
 			# Make the directory and any parent directories.
 			eval { mkpath($path,0,$perm) };
 			if ($@) {
