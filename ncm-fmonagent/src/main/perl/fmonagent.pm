@@ -1023,30 +1023,13 @@ sub Configure {
 		#
 		CORE::rename "$cfgfile.tmp",$cfgfile;                     # put cfg files in place
 	}
-		
-        my $state = qx%/sbin/service $service status%;
-        my $restartcmd = undef;
-        if ( $state =~ "running" ) {
-          $restartcmd = "restart";
-        } else {
-	  my $booting = "false";
-	  if ( defined($ENV{"NOTD_EXEC_TODO"}) ) {
-            if ( $ENV{"NOTD_EXEC_TODO"} =~ "boot" ) {
-              $booting = "true";
-            }
-          }
-	  if ( ( $booting =~ "false" ) && ( CORE::system("/sbin/chkconfig $service") == 0 ) ) {
-            $restartcmd = "start";
-          }
-        }
-        if ( defined($restartcmd) ) {
-	  $status = CORE::system("/sbin/service $service $restartcmd"); # restart monitoring
+	
+    unless (defined($ENV{"NOTD_EXEC_TODO"}) && $ENV{"NOTD_EXEC_TODO"} ne 'boot') {
+	  $status = CORE::system("/sbin/service $service condrestart"); # restart monitoring
 	  if ($status ne 0) {
 		$self->error("Unable to restart monitoring: $?");
 	  }
-        } else {
-          $self->log("Monitoring was stopped. Not restarted");
-        } 
+    }
 
 	return;
 }
